@@ -1,1 +1,2 @@
-# EECS556-Project_-GFT-Compression
+# EECS556-Project-GFT-Compression
+
