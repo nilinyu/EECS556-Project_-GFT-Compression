@@ -15,7 +15,7 @@ def edge_name_parse(src, dest, width, height):
     if dest == src + 1:
         return src//width * (height+width-2) + src%(width - 1)
     if dest == src + width:
-        return src//width * (height+width-2) + w - 1 + src%width
+        return src//width * (height+width-2) + width - 1 + src%width
     return None
 
 def get_M(width,height):
@@ -42,6 +42,13 @@ def get_M_diag(M):
         M_diag[i*M+i, i] = 1
     return M_diag
 
+def eig_decompose(A):
+    eigenValues, eigenVectors = np.linalg.eig(A)
+    idx = np.argsort(-eigenValues)
+    eigenValues = eigenValues[idx]
+    eigenVectors = eigenVectors[:,idx]
+    return (eigenValues, eigenVectors)
+
 def get_psi_d(width, height):
     # W is the adjacency matrix of the dual graph, constructed based on the rule that 2 nodes are connected iff. their corresponding edges in the original graph share an endpoint
     M = get_M(width, height)
@@ -56,9 +63,9 @@ def get_psi_d(width, height):
     # D is the degree matrix of the dual graph. Since it is an unweighted graph, D can be derived from D fairly easily
     D = np.diag(W.sum(axis=0))
     L = D - W
-    _, psi_d = np.linalg.eig(L)
+    _, psi_d = eig_decompose(L)
     return psi_d
-    
+
 def convex_optimize(u, width, height=None, alpha=100, beta=1):
     """
     The convex optimization problem is to minimize
@@ -89,7 +96,7 @@ def convex_optimize(u, width, height=None, alpha=100, beta=1):
     prob.solve()
     W_hat = np.diag(w.value)
     L = B@W_hat@B.T # The incidence matrix definition of graph Laplacian
-    _, psi = np.linalg.eig(L) # psi is the graph Fourier transformation matrix
+    _, psi = eig_decompose(L) # psi is the graph Fourier transformation matrix
     u_hat = psi.T@u # The coefficients in the Fourier domain
     return w.value, u_hat
 
@@ -97,7 +104,7 @@ def quantize(w, width, height, step_size, M_thresh):
     psi_d = get_psi_d(width, height)
     w_hat = psi_d.T@w
     w_hat_r = w_hat
-    w_hat_r[w_hat.argsort()[:-M_thresh]] = 0 # Reduce by keeping only M_thresh number of weights
+    w_hat_r[M_thresh:] = 0 # Reduce by keeping only M_thresh number of weights
     w_hat_r_quant = w_hat//step_size
     return w_hat_r_quant
 
@@ -108,9 +115,12 @@ def reconstruct(u_hat, w_hat_quant, step_size, width, height):
     W_hat = np.diag(w)
     B = get_incidence_matrix(width, height)
     L = B@W_hat@B.T
-    _, psi = np.linalg.eig(L)
+    _, psi = eig_decompose(L)
     u = psi@u_hat
     return u
+
+def entropy_coding():
+    pass
 
 def compute_distortion(u, u_recon):
     return np.linalg.norm(u - u_recon)
@@ -119,6 +129,3 @@ def choose_quantization(u, u_hat, w, width, height, step_sizes, M_thresh):
     w_hat_quant_list = [quantize(w, width, height, step_size, M_thresh) for step_size in step_sizes]
     u_recon_list = [reconstruct(u_hat, w_hat_quant, step_size, width, height) for w_hat_quant, step_size in zip(w_hat_quant_list, step_sizes)]
     distortions = [compute_distortion(u, u_recon) for u_recon in u_recon_list]
-    
-
-    
