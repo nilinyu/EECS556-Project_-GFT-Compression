@@ -1,5 +1,7 @@
 import cvxpy as cp
 import numpy as np
+import huffman
+import collections
 
 ###
 # Utilities, no sanity check in most cases
@@ -97,7 +99,7 @@ def convex_optimize(u, width, height=None, alpha=100, beta=1):
     W_hat = np.diag(w.value)
     L = B@W_hat@B.T # The incidence matrix definition of graph Laplacian
     _, psi = eig_decompose(L) # psi is the graph Fourier transformation matrix
-    u_hat = psi.T@u # The coefficients in the Fourier domain
+    u_hat = psi.T@u # The coefficients in the Fourier domain. Theoretical one not the quantized one
     return w.value, u_hat
 
 def quantize(w, width, height, step_size, M_thresh):
@@ -105,10 +107,10 @@ def quantize(w, width, height, step_size, M_thresh):
     w_hat = psi_d.T@w
     w_hat_r = w_hat
     w_hat_r[M_thresh:] = 0 # Reduce by keeping only M_thresh number of weights
-    w_hat_r_quant = w_hat//step_size
+    w_hat_r_quant = (w_hat/step_size).round()
     return w_hat_r_quant
 
-def reconstruct(u_hat, w_hat_quant, step_size, width, height):
+def reconstruct(u_hat_quant, w_hat_quant, step_size, width, height):
     psi_d = get_psi_d(width, height)
     w_hat = w_hat_quant*step_size
     w = psi_d@w_hat
@@ -116,19 +118,34 @@ def reconstruct(u_hat, w_hat_quant, step_size, width, height):
     B = get_incidence_matrix(width, height)
     L = B@W_hat@B.T
     _, psi = eig_decompose(L)
+    u_hat = u_hat_quant*step_size
     u = psi@u_hat
     return u
 
-def entropy_coding():
-    pass
-
+def entropy_coding(u_hat_quant, w_hat_quant):
+    u_list = u_hat_quant.tolist()
+    w_list = w_hat_quant.tolist()
+    word_cnt_tb = collections.Counter(u_list + w_list)
+    code_book = huffman.codebook(word_cnt_tb.items())
+    u_code = ''.join([code_book[k] for k in u_list])
+    w_code = ''.join([code_book[k] for k in w_list])
+    return u_code, w_code
+    
+    
 def compute_distortion(u, u_recon):
     return np.linalg.norm(u - u_recon)
 
-def choose_quantization(u, u_hat, w, width, height, step_sizes, M_thresh):
-    w_hat_quant_list = [quantize(w, width, height, step_size, M_thresh) for step_size in step_sizes]
-    u_recon_list = [reconstruct(u_hat, w_hat_quant, step_size, width, height) for w_hat_quant, step_size in zip(w_hat_quant_list, step_sizes)]
-    distortions = [compute_distortion(u, u_recon) for u_recon in u_recon_list]
-    
+def argmin(iterable):
+    return min(enumerate(iterable), key=lambda x: x[1])[0]
 
+def choose_quantization(u, u_hat, w, width, height, step_sizes, M_thresh, gamma):
+    w_hat_quant_list = [quantize(w, width, height, step_size, M_thresh, encode=True) for step_size in step_sizes]
+    u_hat_quant_list = [(u_hat/step_sizes).round() for step_size in step_sizes]
+    u_recon_list = [reconstruct(u_hat_quant, w_hat_quant, step_size, width, height) for u_hat_quant, w_hat_quant, step_size in zip(u_hat_quant_list, w_hat_quant_list, step_sizes)]
+    distortions = [compute_distortion(u, u_recon) for u_recon in u_recon_list]
+    coded = [entropy_coding(u_hat_quant, w_hat_quant) for u_hat_quant, w_hat_quant in zip(u_hat_quant_list, w_hat_quant_list)]
+    rates = [len(''.join(code))/(width*height*4) for code in coded]
+    loss = [distortion + gamma*rate for distortion,rate in zip(distortions, rates)]
+    opt_idx = argmin(loss)
+    return u_hat_quant_list[opt_idx], w_hat_quant_list[opt_idx]
     
