@@ -68,6 +68,11 @@ def get_psi_d(width, height):
     _, psi_d = eig_decompose(L)
     return psi_d
 
+
+###
+# Functions that you really called
+###
+
 def convex_optimize(u, width, height=None, alpha=100, beta=1):
     """
     The convex optimization problem is to minimize
@@ -94,7 +99,7 @@ def convex_optimize(u, width, height=None, alpha=100, beta=1):
     w = cp.Variable(M) # The weight of each edge in a vector. With B fixed, the graph G can be uniquely determined by it. 
     # Optimization summary: constant array inner product with w + constant times l1 norm of contant matrix times w - something similar to l1 norm
     prob = cp.Problem(cp.Minimize(((B.T@u).reshape(-1,1)@(B.T@u).reshape(1,-1)).reshape(-1)@M_diag@w + alpha*cp.norm(psi_d.T@w,1) - beta*np.ones(M)@cp.log(w)),
-            [w >= 0, w <= np.ones(M)])
+            [w <= np.ones(M)])
     prob.solve()
     W_hat = np.diag(w.value)
     L = B@W_hat@B.T # The incidence matrix definition of graph Laplacian
@@ -110,7 +115,7 @@ def quantize(w, width, height, step_size, M_thresh):
     w_hat_r_quant = (w_hat/step_size).round()
     return w_hat_r_quant
 
-def reconstruct(u_hat_quant, w_hat_quant, step_size, width, height):
+def reconstruct(u_hat, w_hat_quant, step_size, width, height):
     psi_d = get_psi_d(width, height)
     w_hat = w_hat_quant*step_size
     w = psi_d@w_hat
@@ -118,7 +123,6 @@ def reconstruct(u_hat_quant, w_hat_quant, step_size, width, height):
     B = get_incidence_matrix(width, height)
     L = B@W_hat@B.T
     _, psi = eig_decompose(L)
-    u_hat = u_hat_quant*step_size
     u = psi@u_hat
     return u
 
